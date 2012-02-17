@@ -21,12 +21,16 @@ SECTIONS
         *(.blmagic)
     }
 
-    . = ALIGN(16);
+    . = ALIGN(512);
     .blsec.text : {
         *(.blsec.text)
+    }
+    .blsec.data : {
+        *(.blsec.data)
     }
 
     .note : {
         *(.note*)
     }
+
 }

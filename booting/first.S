@@ -6,14 +6,15 @@
     .code16
     .section ".bltext", "ax"
     .global _bootloader_start
-_bootloader_main:
+_bootloader_start:
     ljmp $0x7c0, $init_bootloader
 init_bootloader:
     movw %cs, %ax
     movw %ax, %ss
     movw %ax, %ds
     movw %ax, %es
-    xorw %sp, %sp
+	movw $stack_top_position, %ax
+    movw %ax, %sp
     sti
     movw $start_boot_msg, %si
     call print_msg
@@ -21,13 +22,14 @@ init_bootloader:
 read_sectors_into_mem:
     movb $0x2, %ah
     movb $2, %al /* num of sectors */
-    movb $0, %ch /* cylinder */
-    movb $1, %cl /* sector number */
-    movw $0, %dx
-    movw $512, %bx /* target offset */
+    movb $0, %ch /* track */
+    movb $2, %cl /* sector number 1 to 63 */
+    movb $0, %dh /* head */
+    movb $0, %dl /* 1st floppy */
+    movw $0x200, %bx /* target offset */
     int $0x13
     jae none
-
+		
     movw $copied_sectors_to_mem, %si
     call print_msg
 
@@ -64,6 +66,7 @@ halt_the_machine:
     .byte 0
 
     .section ".blmagic", "a"
+stack_top_position:		
 magic_number: .word 0xAA55
 
     .section ".blsec.text", "ax"
@@ -71,7 +74,8 @@ magic_number: .word 0xAA55
 bootloader_main:
     movw $hello_bootloader_main, %si
     call print_msg
-    jmp none
+none2:	
+    jmp none2
 
     .section ".blsec.data", "a"
 hello_bootloader_main:
