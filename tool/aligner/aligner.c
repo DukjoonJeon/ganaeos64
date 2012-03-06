@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
     off_t cur_offset;
     int align_size;
     int filefd;
-    char buf = 0xc8;
+    char buf = 0x90; /* nop */
 
     if (argc != 3) {
         fprintf(stderr, 

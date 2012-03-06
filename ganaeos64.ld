@@ -21,12 +21,30 @@ SECTIONS
         *(.blmagic)
     }
 
-    . = ALIGN(512);
+    /* already aligned by 512 */
     .blsec.text : {
         *(.blsec.text)
     }
     .blsec.data : {
         *(.blsec.data)
+    }
+	. = ALIGN(512);
+    .blsec.text32 : {
+        *(.blsec.text32)
+    }
+
+	.bss : {
+	    *(.bss)
+    }
+
+	.text : {
+	    *(.text)
+	    *(.text.*)
+    }
+
+	.data : {
+	 	*(data)
+        *(data.*)
     }
 
     .note : {
