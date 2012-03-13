@@ -22,9 +22,14 @@ init_bootloader:
     movw $start_boot_msg, %si
     call print_msg
 
-read_sectors_into_mem:
+    /* enable a20 pin for using over 1mb memory */
+    movw $0x2401, %ax
+    int $0x15
+    jc none
+
+    /* read floppy's sectors into mem */
     movb $0x2, %ah
-    movb $2, %al /* num of sectors */
+    movb $10, %al /* num of sectors */
     movb $0, %ch /* cylinder & 0xff */
     movb $2, %cl /* sector number 1 to 63 */
     movb $0, %dh /* head */
@@ -36,7 +41,7 @@ read_sectors_into_mem:
     movw $copied_sectors_to_mem, %si
     call print_msg
 
-jump_to_bootloader_main:
+    /* jump to main bootloader */
     jmp bootloader_main
 	
 print_msg:
@@ -51,8 +56,11 @@ _print_msg_end:
     ret
 	
 none:
+    movw $halt_the_machine, %si
+    call print_msg
+_none:	
     hlt
-    jmp none
+    jmp _none
 
     .section ".bldata", "a"
 start_boot_msg:
@@ -69,13 +77,14 @@ halt_the_machine:
 stack_top_position:		
 magic_number: .word 0xAA55
 
+    /* below code on since the 2nd sector */
     .section ".blsec.text", "ax"
     .global bootloader_main
 bootloader_main:
     movw $hello_bootloader_main, %si
     call print_msg
 
-jump_32bit_mode:
+    /* change mode to 32bit mode */
     lgdt protect_32bit_gdtr
     movl %cr0, %eax
     orl $1, %eax
@@ -92,7 +101,7 @@ hello_bootloader_main:
     .byte 0
 
 protect_32bit_gdtr:
-    .word 0x1f
+    .word 0x18
     .long 0x7c00 + protect_32bit_gdt
 
     .balign 8
@@ -119,20 +128,24 @@ protect_32bit_gdt:
 		
     .code32
     .section ".blsec.text32", "ax"
+	.extern _endof1stbl
 main_32bit:
     movw $0x10, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %ss
-    movl stack_top_position + 0x7c00, %eax
+    movl $stack_top_position + 0x7c00, %eax
     movl %eax, %esp
 	
     movl $0xb8000, %edi
     movb $'@', %bl
     movb %bl, (%edi)
-none2:
-	hlt
-    jmp none2 + 0x7c00
 
-	.end
-		
+    /* jump to second bootloader */
+	/* second bootloader on next disk sector */
+    call _endof1stbl
+	
+none2:
+    hlt
+    jmp none2 + 0x7c00
+    .end

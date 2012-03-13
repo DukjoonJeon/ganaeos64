@@ -33,22 +33,20 @@ SECTIONS
         *(.blsec.text32)
     }
 
-	.bss : {
-	    *(.bss)
+    .bss : {
+        *(.bss)
     }
-
-	.text : {
-	    *(.text)
-	    *(.text.*)
+    .text : {
+       *(.text)
+       *(.text.*)
     }
-
-	.data : {
-	 	*(data)
+    .data : {
+ 	*(data)
         *(data.*)
     }
-
     .note : {
         *(.note*)
     }
-
+    . = ALIGN(512);
+    _endof1stbl = .;
 }
