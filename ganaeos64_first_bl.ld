@@ -5,48 +5,32 @@
  */
 OUTPUT_FORMAT("elf64-x86-64", "elf64-x86-64", "elf64-x86-64")
 OUTPUT_ARCH(x86-64)
-ENTRY(bootloader_main)
+ENTRY(bootloader_start)
 
 SECTIONS
 {
     . = 0;
-    .bltext : {
-        *(.bltext)
+    .bl.text16 : {
+        *(.bl.text16)
     }
-    .bldata : {
-        *(.bldata)
+    .bl.data16 : {
+        *(.bl.data16)
     }
     . = 510;
-    .blmagic : {
-        *(.blmagic)
+    .bl.magic : {
+        *(.bl.magic)
     }
 
     /* already aligned by 512 */
-    .blsec.text : {
-        *(.blsec.text)
-    }
-    .blsec.data : {
-        *(.blsec.data)
-    }
-	. = ALIGN(512);
-    .blsec.text32 : {
-        *(.blsec.text32)
+    .bl.text64 : {
+        *(.bl.text64)
     }
 
-    .bss : {
-        *(.bss)
+	.bl.data64 : {
+	    *(.bl.data64)
     }
-    .text : {
-       *(.text)
-       *(.text.*)
-    }
-    .data : {
- 	*(data)
-        *(data.*)
-    }
+
     .note : {
         *(.note*)
     }
-    . = ALIGN(512);
-    _endof1stbl = .;
 }
