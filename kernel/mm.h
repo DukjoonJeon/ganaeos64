@@ -8,4 +8,7 @@
 extern uint64 get_physical_mem_size(void);
 extern void init_mm(void);
 
+#define PAGE_ATTR 0x0Fff
+#define PAGE_P_BIT (1 << 0)
+
 #endif

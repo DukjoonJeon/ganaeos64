@@ -24,7 +24,7 @@ $(PROJECT)_first_bl.elf: $(FIRST_BL_OBJ)
 	$(LINKER) -o $(PROJECT)_first_bl.elf -T ganaeos64_first_bl.ld $(FIRST_BL_OBJ)
 
 first.o: booting/first.S
-	$(CC) -c booting/first.S
+	$(CC) -c booting/first.S -m64
 
 global32bit.o: booting/global32bit.c
 	$(CC) -c booting/global32bit.c -std=c99 -m32 -I./booting
