@@ -34,5 +34,6 @@ SECTIONS
         *(.note*)
     }
 
-	
+	. = ALIGN(512);
+	start_kernel_addr = .;
 }

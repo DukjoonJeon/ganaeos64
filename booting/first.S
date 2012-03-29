@@ -178,6 +178,8 @@ main_64bit:
 	movw %ax, %gs
 	
 	movq $stack_top_position + 0x7c00, %rsp
+
+	jmp start_kernel_addr
 	
 none2:			
 	jmp none2
