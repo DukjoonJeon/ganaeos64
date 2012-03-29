@@ -3,8 +3,6 @@
 
 #include <types.h>
 
-extern uint32 printk(char *str)
-{
-    return 0;
-}
+extern uint32 printk(char *str);
+
 #endif /* #ifndef __CONSOLE_H__ */

@@ -1,6 +1,6 @@
+#include <mm.h>
 
-void start_kernel(void) __attribute__ (( section (".text.start") ))
+__attribute__ (( section (".text.start") )) void start_kernel(void)
 {
-    init_paging();
-    init_mm();
-}
+	init_mm();
+} 
