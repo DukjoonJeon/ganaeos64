@@ -1,9 +1,10 @@
 #include <mm.h>
 #include <types.h>
 #include <warn.h>
+#include <libc.h>
 
 struct physical_memory_block {
-    addr_t addr;
+    void *addr;
     struct physical_memory_block *next;
 };
 
@@ -12,8 +13,17 @@ struct physical_memory_block {
 #define INIT_FREE_PHY_MEM_START (2 * 1024 * 1024)
 #define INIT_FREE_PHY_MEM_END (4 * 1024 * 1024 - 1)
 
-
 struct physical_memory_block *start_entry = NULL;
+
+static boolean is_aligned(void *addr, uint32 align)
+{
+    ASSERT(align >= 1);
+
+    if ((addr_t)addr & (addr_t)(align - 1) != 0)
+        return FALSE;
+
+    return TRUE;
+}
 
 static page_t *get_pml4(void)
 {
@@ -27,14 +37,15 @@ static page_t *get_pml4(void)
     return (page_t *)pml4_addr;
 }
 
-static inline boolean get_child_page_by_index(__IN page_t *parent_addr,
-                                              __IN uint16 index,
-                                              __OUT page_t **child_addr)
+static boolean get_child_page_by_index(__IN page_t *parent_addr,
+                                       __IN uint16 index,
+                                       __OUT page_t **child_addr)
 {
-    addr_t result;
+    page_t result;
 
     ASSERT((index >= 0) && (index < 512));
-    ASSERT((parent_addr != NULL) && (((addr_t)parent_addr & (addr_t)(PAGESIZE-1)) == 0));
+    ASSERT(parent_addr != NULL);
+    ASSERT(((addr_t)parent_addr & (addr_t)(PAGESIZE-1)) == 0);
     ASSERT(*child_addr != NULL);
 
     result = parent_addr[index];
@@ -45,61 +56,86 @@ static inline boolean get_child_page_by_index(__IN page_t *parent_addr,
     return TRUE;
 }
 
-static inline boolean get_pdpte(__IN page_t *pml4_addr, __IN addr_t logical_addr,
-                                __OUT page_t **pdpte_addr)
+static uint16 get_pml4_index(__IN void *logical_addr)
 {
-    uint16 index;
-
     ASSERT((addr_t)logical_addr < ((addr_t)1 << 48));
-    ASSERT((pml4_addr != NULL) && (((addr_t)pml4_addr & (addr_t)(PAGESIZE-1)) == 0));
-    ASSERT(*pdpte_addr != NULL);
-
-    index = logical_addr >> (12 + 9 + 9 + 9);
-
-    return get_child_page_by_index(pml4_addr, index, pdpte_addr);
+    
+    return (addr_t)logical_addr >> (9 + 9 + 9 + 12);
 }
 
-static inline boolean get_pde(__IN page_t *pdpte_addr, __IN addr_t logical_addr,
-                              __OUT page_t **pde_addr)
+static uint16 get_pdpte_index(__IN void *logical_addr)
 {
-    uint16 index;
-
     ASSERT((addr_t)logical_addr < ((addr_t)1 << 48));
-    ASSERT((pdpte_addr != NULL) && (((addr_t)pdpte_addr & (addr_t)(PAGESIZE-1)) == 0));
-    ASSERT(*pde_addr != NULL);
 
-    index = (logical_addr >> (12 + 9 + 9)) & 0x01ff;
-
-    return get_child_page_by_index(pdpte_addr, index, pde_addr);
+    return (addr_t)logical_addr >> (9 + 9 + 12) & 0x1ff;
 }
 
-static inline boolean get_pte(__IN page_t *pde_addr, __IN addr_t logical_addr,
-                              __OUT page_t **pte_addr)
+static uint16 get_pde_index(__IN void *logical_addr)
 {
-    uint16 index;
-
     ASSERT((addr_t)logical_addr < ((addr_t)1 << 48));
-    ASSERT((pde_addr != NULL) && (((addr_t)pde_addr & (addr_t)(PAGESIZE-1)) == 0));
-    ASSERT(*pte_addr != NULL);
 
-    index = (logical_addr >> (12 + 9)) & 0x01ff;
-
-    return get_child_page_by_index(pde_addr, index, pte_addr);
+    return ((addr_t)logical_addr >> (9 + 12)) & 0x01ff;
 }
 
-static inline boolean get_physical_addr(__IN page_t *pte_addr,
-                                        __IN addr_t logical_addr,
-                                        __OUT page_t **addr)
+static uint16 get_pte_index(__IN void *logical_addr)
 {
-    uint16 index;
+    ASSERT((addr_t)logical_addr < ((addr_t)1 << 48));
+    
+    return (addr_t)logical_addr >> 12 & 0x1ff;
+}
+
+static boolean get_physical_addr(__IN void *logical_addr,
+                                 __OUT void **physical_addr)
+{
+    uint16 pml4_index;
+    uint16 pdpte_index;
+    uint16 pte_index;
+    uint16 pde_index;
+    page_t *pml4_addr;
+    page_t *pdpte_addr;
+    page_t *pte_addr;
+    page_t *pde_addr;
+    page_t page;
 
     ASSERT((addr_t)logical_addr < ((addr_t)1 << 48));
-    ASSERT((pte_addr != NULL) && (((addr_t)pte_addr & (addr_t)(PAGESIZE-1)) == 0));
-    ASSERT(*addr != NULL);
+    ASSERT(((addr_t)pml4_addr & (addr_t)(PAGESIZE-1)) == 0);
+    ASSERT(*physical_addr != (addr_t)NULL);
 
-    index = (logical_addr >> (12)) & 0x01ff;
+    pml4_index = get_pml4_index(logical_addr);
+    pdpte_index = get_pdpte_index(logical_addr);
+    pte_index = get_pte_index(logical_addr);
+    pde_index = get_pde_index(logical_addr);
 
-    return get_child_page_by_index(pte_addr, index, addr);
+    ASSERT(pml4_index < 512);
+    ASSERT(pdpte_index < 512);
+    ASSERT(pte_index < 512);
+    ASSERT(pde_index < 512);
+
+    pml4_addr = get_pml4();
+    if (is_aligned(pml4_addr, PAGESIZE) == FALSE)
+        return FALSE;
+    page = *(pml4_addr + pml4_index);
+    if ((page & PAGE_P_BIT) == 0)
+        return FALSE;
+
+    pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+    page = *(pdpte_addr + pdpte_index);
+    if ((page & PAGE_P_BIT) == 0)
+        return FALSE;
+
+    pde_addr = (page_t *)(page & ~(PAGESIZE - 1));
+    page = *(pde_addr + pde_index);
+    if ((page & PAGE_P_BIT) == 0)
+        return FALSE;
+
+    pte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+    page = *(pte_addr + pte_index);
+    if ((page & PAGE_P_BIT) == 0)
+        return FALSE;
+
+    *physical_addr = (void *)((page & ~(PAGESIZE - 1)) + ((addr_t)logical_addr & (PAGESIZE - 1)));
+
+    return TRUE;
 }
 
 static boolean get_free_physical_memory_block(
@@ -127,10 +163,10 @@ static boolean add_free_physical_memory_block(
 
 static void _init_first_free_physical_memory_block(void)
 {
-    addr_t cur = INIT_FREE_PHY_MEM_START;
+    void *cur = (void *)INIT_FREE_PHY_MEM_START;
     struct physical_memory_block *block;
 
-    while (cur < INIT_FREE_PHY_MEM_END) {
+    while (cur < (void *)INIT_FREE_PHY_MEM_END) {
         block = (struct physical_memory_block *)cur;
         block->addr = cur;
         if (add_free_physical_memory_block(block) == FALSE)
@@ -141,40 +177,81 @@ static void _init_first_free_physical_memory_block(void)
 
 static void init_physical_memory_block(__IN addr_t physical_memory_size)
 {
-    uint16 pml4_index;
-    uint16 pdpte_index;
-    uint16 pde_index;
-    uint16 pte_index;
-    
-    page_t *pml4;
-    page_t *pdpte;
-    page_t *pde;
-    page_t *pte;
-
-    addr_t current;
+    uint16 pml4_index = 0;
+    uint16 pdpte_index = 0;
+    uint16 pde_index = 0; 
+    uint16 pte_index = 0;
+    page_t *pml4_addr;
+    page_t *pdpte_addr;
+    page_t *pde_addr;
+    page_t *pte_addr;
+    page_t page;
+    struct physical_memory_block *free_memory_block;
+    page_t *current;
 
     ASSERT(physical_memory_size > UP_TO_DIRECT_MAPPED_PAGE);
 
 	_init_first_free_physical_memory_block();
-	/* current = INIT_FREE_PHY_MEM_END; */
+	current = (page_t *)INIT_FREE_PHY_MEM_END + 1;
         
-    /* pml4 = get_pml4(); */
-    /* while (current < physical_memory_size) { */
-    /*     if (get_pdpte(pml4, current, &pdpte) == FALSE) { */
-    /*         get_free_physical_memory_block() */
-    /*     } */
+    pml4_addr = get_pml4();
+    while (current < (page_t *)physical_memory_size) {
+        pml4_index = get_pml4_index(current);
+        pdpte_index = get_pdpte_index(current);
+        pde_index = get_pde_index(current);
+        pte_index = get_pte_index(current);
 
-    /*     if (get_pde(pdpte, current, &pde) == FALSE) */
-    /*         abort(); */
+        /* check existing pml4 entry */
+        page = *(pml4_addr + pml4_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+                abort();
+            *(pml4_addr + pml4_index) = 
+                (page_t)free_memory_block->addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)free_memory_block->addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
 
-    /* if (get_pde(pde, current, &pte) == FALSE) */
-    /*     abort(); */
+        pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        page = *(pdpte_addr + pdpte_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+                abort();
+            *(pdpte_addr + pdpte_index) =
+                (page_t)free_memory_block->addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)free_memory_block->addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
 
-    /* } */
-    
-    
+        pde_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        page = *(pde_addr + pde_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+                abort();
+            *(pde_addr + pde_index) =
+                (page_t)free_memory_block->addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)free_memory_block->addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
 
-    /* linear mapping */
+        pte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        *(pte_addr + pte_index) = 
+            (page_t)current | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT;
+
+        /* add new free memory block */
+        /* if (current > INIT_FREE_PHY_MEM_END) { */
+        /*     ((struct physical_memory_block *)current)->addr = current; */
+        /*     add_free_physical_memory_block((struct physical_memory_block *)current); */
+        /* } */
+        
+        current += PAGESIZE;
+    }
 }
 
 void init_mm(void)

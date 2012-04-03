@@ -1,6 +1,6 @@
 PROJECT := ganaeos64
 FIRST_BL_OBJ := first.o
-KERNEL_OBJ := main.o mm.o warn.o console.o delay.o
+KERNEL_OBJ := main.o mm.o warn.o console.o delay.o libc.o
 LINKER = gold
 ASSEMBLER = as
 CC = gcc
@@ -42,6 +42,10 @@ console.o: kernel/console.c
 
 delay.o: kernel/delay.c
 	gcc -c $< -std=c99 -m64 -I./include -g
+
+libc.o: kernel/libc.c
+	gcc -c $< -std=c99 -m64 -I./include -g
+
 
 clean:
 	rm -rf *.bin *.elf *.o
