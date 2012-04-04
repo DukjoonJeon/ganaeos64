@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <stdlib.h>
 
+/* TODO: remove blank buddy block root */
+
 typedef unsigned char uint8;
 typedef char int8;
 typedef unsigned short uint16;
@@ -32,6 +34,7 @@ struct buddy_entry {
 
 struct heap_block_chunk {
     struct buddy_block_root *root;
+	uint16 depth;
 	uint32 size;
 };
 
@@ -234,6 +237,7 @@ void *_alloc_heap(uint32 adj_size)
 				cur->free_size -= adj_size;
 				cur->used_size += adj_size;
 				((struct heap_block_chunk *)ret)->root = cur;
+				((struct heap_block_chunk *)ret)->depth = depth;
 				((struct heap_block_chunk *)ret)->size = adj_size;
 				break;
 			}
@@ -276,6 +280,9 @@ void *alloc_heap(uint32 size)
 	printf("%s(%d): add a new buddy block root and retry allocation\n",
 		   __func__, __LINE__);
 
+    /* TODO: merge splited block and retry allocation */
+	
+
 	/* add a new buddy block root and retry allocation */
 	if (add_new_buddy_block_root() == FALSE)
 		return NULL;
@@ -286,6 +293,37 @@ void *alloc_heap(uint32 size)
 	printf("%s(%d): ret %x\n", __func__, __LINE__, ret);
 end:
 	return CHUNK_TO_BLOCK(ret);;
+}
+
+void free_heap(void *block)
+{
+	struct heap_block_chunk *chunk;
+	struct buddy_block_root *root;
+	struct buddy_entry *entry;
+	struct buddy_entry *cur_entry;
+	uint16 depth;
+	uint32 size;
+
+	chunk = BLOCK_TO_CHUNK(block);
+	root = chunk->root;
+	depth = chunk->depth;
+	size = chunk->size;
+	
+	entry = (struct buddy_entry *)chunk;
+	entry->size = size;
+
+	if (root->size_head[depth] == NULL) {
+		root->size_head[depth] = entry;
+		entry->next = NULL;
+
+		return;
+	}
+
+	cur_entry = root->size_head[depth]; 
+	while (cur_entry->next != NULL && cur_entry->next < entry)
+		cur_entry = cur_entry->next;
+	entry->next = cur_entry->next;
+	cur_entry->next = entry;
 }
 
 boolean init_alloc(void)
@@ -300,6 +338,8 @@ int main(void)
 	int i;
 	uint16 d;
 	char *aa;
+	char *bb;
+	char *cc;
 
 	if (init_alloc() == FALSE) {
 		fprintf(stderr, "init_heap is error\n");
@@ -322,27 +362,90 @@ int main(void)
 	/* printf("----------------------------2power test end\n"); */
 
     
-	aa = (char *)alloc_heap(1);
-	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
-	printf("------------------------------------------\n");
-	aa = (char *)alloc_heap(15);
-	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
-	printf("------------------------------------------\n");
-	aa = (char *)alloc_heap(31);
-	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
-	printf("------------------------------------------\n");
-	aa = (char *)alloc_heap(50);
-	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
-    for (int i = 0; i < 5000; i++) {
-        printf("------------------------------------------\n");
-        aa = (char *)alloc_heap(500 * 10);
-        if (aa == NULL) {
-            printf("alloc fail %d\n", i);
-            break;
-        }
-        else
-            printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
+	/* aa = (char *)alloc_heap(1); */
+	/* printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size); */
+	/* printf("------------------------------------------\n"); */
+	/* aa = (char *)alloc_heap(15); */
+	/* printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size); */
+	/* printf("------------------------------------------\n"); */
+	/* aa = (char *)alloc_heap(31); */
+	/* printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size); */
+	/* printf("------------------------------------------\n"); */
+	/* aa = (char *)alloc_heap(50); */
+	/* printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size); */
+    /* for (int i = 0; i < 5000; i++) { */
+    /*     printf("------------------------------------------\n"); */
+    /*     aa = (char *)alloc_heap(500 * 10); */
+    /*     if (aa == NULL) { */
+    /*         printf("alloc fail %d\n", i); */
+    /*         break; */
+    /*     } */
+    /*     else */
+    /*         printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size); */
 
-	}
+	/* } */
+
+	/* printf("------------------------------------------\n"); */
+	/* aa = (char *)alloc_heap(500 * 10); */
+	/* if (aa == NULL) { */
+	/* 	printf("alloc fail %d\n", i); */
+
+	/* } */
+	/* else */
+	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+
+	/* printf("------------------------------------------\n"); */
+	/* bb = (char *)alloc_heap(500 * 10); */
+	/* if (bb == NULL) { */
+	/* 	printf("alloc fail %d\n", i); */
+
+	/* } */
+	/* else */
+	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(bb)->size, bb); */
+
+	/* printf("------------------------------------------\n"); */
+	/* cc = (char *)alloc_heap(500 * 10); */
+	/* if (cc == NULL) { */
+	/* 	printf("alloc fail %d\n", i); */
+
+	/* } */
+	/* else */
+	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(cc)->size, cc); */
+	
+	/* free_heap(aa); */
+	/* free_heap(bb); */
+	/* free_heap(cc);	 */
+
+	/* printf("------------------------------------------\n"); */
+	/* aa = (char *)alloc_heap(500 * 10); */
+	/* if (aa == NULL) { */
+	/* 	printf("alloc fail %d\n", i); */
+
+	/* } */
+	/* else */
+	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+
+	/* printf("------------------------------------------\n"); */
+	/* aa = (char *)alloc_heap(500 * 10); */
+	/* if (aa == NULL) { */
+	/* 	printf("alloc fail %d\n", i); */
+
+	/* } */
+	/* else */
+	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+
+    /* for (int i = 0; i < 5000; i++) { */
+    /*     printf("------------------------------------------\n"); */
+    /*     aa = (char *)alloc_heap(500 * 10); */
+    /*     if (aa == NULL) { */
+    /*         printf("alloc fail %d\n", i); */
+    /*         break; */
+    /*     } */
+    /*     else */
+    /*         printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+
+	/* 	free_heap(aa); */
+	/* } */
+
 	return 0;
 }
