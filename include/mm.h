@@ -16,4 +16,6 @@ extern void init_mm(void);
 typedef uint64 addr_t;
 typedef uint64 page_t;
 
+/* extern void *alloc_heap(uint32 size); */
+
 #endif
