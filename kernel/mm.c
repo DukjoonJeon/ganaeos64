@@ -159,6 +159,8 @@ static boolean add_free_physical_memory_block(
 
     block->next = start_entry;
     start_entry = block;
+
+    return TRUE;
 }
 
 static void _init_first_free_physical_memory_block(void)
@@ -250,7 +252,7 @@ static void init_physical_memory_block(__IN addr_t physical_memory_size)
         /*     add_free_physical_memory_block((struct physical_memory_block *)current); */
         /* } */
         
-        current += PAGESIZE;
+        current = ((uint8 *)current) + PAGESIZE;
     }
 }
 

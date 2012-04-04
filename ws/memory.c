@@ -16,11 +16,11 @@ typedef int boolean;
 #define FALSE 0
 
 #define BUDDY_MAX_DEPTH 22 /* 2mb */
-#define BUDDY_MIN_SIZE_SHIFT 4 /* 16byte */
+#define BUDDY_MIN_SIZE_SHIFT 5 /* 32byte */
 #define BUDDY_AVAILABLE_DEPTH (BUDDY_MAX_DEPTH - BUDDY_MIN_SIZE_SHIFT)
 #define BUDDY_ENTRY_ROOT_SIZE (1 << (BUDDY_MAX_DEPTH - 1))
 
-#define ASSERT(__ARG) assert(__arg)
+#define ASSERT(__ARG) while (0)
 
 #define BLOCK_TO_CHUNK(__block) (((struct heap_block_chunk *)(__block)) - 1)
 #define CHUNK_TO_BLOCK(__block) (((struct heap_block_chunk *)(__block)) + 1)
@@ -31,26 +31,39 @@ struct buddy_entry {
 };
 
 struct heap_block_chunk {
+    struct buddy_entry *root;
 	uint32 size;
 };
 
-struct buddy_entry *size_head[BUDDY_AVAILABLE_DEPTH];
+struct buddy_block_root {
+    struct buddy_entry *size_head[BUDDY_AVAILABLE_DEPTH];
+    struct buddy_block_root *next;
+};
+
+struct buddy_block_root buddy_block_root_first;
+struct buddy_block_root *buddy_block_root_list;
 
 boolean init_heap(void)
 {
 	uint16 loopi;
+
+    buddy_block_root_first.next = NULL;
 	
-	size_head[0] = (struct buddy_entry *)malloc(BUDDY_ENTRY_ROOT_SIZE);
-	if (size_head[0] == NULL)
+	buddy_block_root_first.size_head[0] = 
+        (struct buddy_entry *)malloc(BUDDY_ENTRY_ROOT_SIZE);
+	if (buddy_block_root_first.size_head[0] == NULL)
 		return FALSE;
 
-	printf("%s(%d): size_head[0]'s addr is %x\n", __func__, __LINE__, size_head);
+	printf("%s(%d): size_head[0]'s addr is %x\n", 
+           __func__, __LINE__, buddy_block_root_first.size_head);
 
-	size_head[0]->next = NULL;
-	size_head[0]->size = 1 << (BUDDY_MAX_DEPTH - 1);
+	buddy_block_root_first.size_head[0]->next = NULL;
+	buddy_block_root_first.size_head[0]->size = 1 << (BUDDY_MAX_DEPTH - 1);
 
 	for (loopi = 1; loopi < BUDDY_MAX_DEPTH; loopi++)
-		size_head[loopi] = NULL;
+		buddy_block_root_first.size_head[loopi] = NULL;
+
+    buddy_block_root_list = &buddy_block_root_first;
 
 	return TRUE;
 }
@@ -88,37 +101,94 @@ boolean get_depth(uint32 size, uint16 *depth)
 	return TRUE;
 }
 
-boolean _split_buddy_block(uint16 depth)
+boolean _split_buddy_block(struct buddy_block_root *block_root, uint16 depth)
 {
 	struct buddy_entry *first_buddy_entry;
 	struct buddy_entry *second_buddy_entry;
 
-    /* TODO assert */
+    /* TODO assert */ 
 
 	printf("%s(%d): start depth %d\n", __func__, __LINE__, depth);
 
-	first_buddy_entry = size_head[depth];
+	first_buddy_entry = block_root->size_head[depth];
 	if (first_buddy_entry == NULL)
 		return FALSE;
 
-	printf("%s(%d): remove depth block %d\n", __func__, __LINE__, depth);
-    size_head[depth] = first_buddy_entry->next;
+	/* printf("%s(%d): remove depth block %d\n", __func__, __LINE__, depth); */
+    block_root->size_head[depth] = block_root->size_head[depth]->next;
 
-
-	first_buddy_entry->size = first_buddy_entry->size / 2;
 	second_buddy_entry = 
 		(struct buddy_entry *)(
 			(uint8 *)first_buddy_entry + first_buddy_entry->size);
 	first_buddy_entry->next = second_buddy_entry;
-	second_buddy_entry->size = first_buddy_entry->size;
-	second_buddy_entry->next = size_head[depth + 1];
-	size_head[depth + 1] = first_buddy_entry;
+	second_buddy_entry->size = 
+        first_buddy_entry->size =
+        first_buddy_entry->size / 2;
+	second_buddy_entry->next = block_root->size_head[depth + 1];
+	block_root->size_head[depth + 1] = first_buddy_entry;
 
-	printf("%s(%d): first_buddy_entry %x, second_buddy_entry %x, size %d\n",
-		   __func__, __LINE__, first_buddy_entry, second_buddy_entry,
-		   first_buddy_entry->size);
+	/* printf("%s(%d): first_buddy_entry %x, second_buddy_entry %x, size %d\n", */
+	/* 	   __func__, __LINE__, first_buddy_entry, second_buddy_entry, */
+	/* 	   first_buddy_entry->size); */
 
 	return TRUE;
+}
+
+void *_alloc_heap_on_buddy_block_root(struct buddy_block_root *block_root,
+                                     uint16 depth)
+{
+    void *ret;
+    uint16 cur_depth;
+
+    /* ASSERT(size && !(size & (size - 1))); */
+    ASSERT(block_root != NULL);
+
+	if (block_root->size_head[depth] != NULL) {
+		ret = block_root->size_head[depth];
+		block_root->size_head[depth] = block_root->size_head[depth]->next;
+
+		printf("%s(%d): matched size is %d, addr = %x\n",
+               __func__, __LINE__, depth, ret);
+		
+        return ret;
+	}
+
+	printf("%s(%d): matched size is not exist %d\n", __func__, __LINE__, depth);
+	
+	/* retry with split */
+	cur_depth = depth - 1;
+	/* find available larger block */
+	while (block_root->size_head[cur_depth] == NULL && cur_depth > 0)
+		cur_depth--;
+
+	printf("%s(%d): split from %d to %d\n", __func__, __LINE__, cur_depth, depth);
+	if (block_root->size_head[cur_depth] != NULL) {
+		for (; cur_depth < depth; cur_depth++) {
+			if (_split_buddy_block(block_root, cur_depth) == FALSE)
+				return NULL;
+		}
+	}
+
+	ret = block_root->size_head[depth];
+	block_root->size_head[depth] = block_root->size_head[depth]->next;
+	printf("%s(%d): matched size is %d, addr = %x\n", __func__, __LINE__, depth, ret);
+
+    return ret;
+}
+
+void *_alloc_heap(uint16 depth)
+{
+    struct buddy_block_root *cur = buddy_block_root_list;
+    void *ret;
+
+    while (cur != NULL) {
+        ret = _alloc_heap_on_buddy_block_root(cur, depth);
+        if (ret != NULL)
+            return ret;
+        cur = cur->next;
+    }
+    
+    return NULL;
 }
 
 void *alloc_heap(uint32 size)
@@ -152,37 +222,11 @@ void *alloc_heap(uint32 size)
 		depth = BUDDY_AVAILABLE_DEPTH - 1;
 	}
 
-	if (size_head[depth] != NULL) {
-		ret = size_head[depth];
-		size_head[depth] = size_head[depth]->next;
+    ret = _alloc_heap(depth);
+    if (ret != NULL)
+        goto end;
 
-		printf("%s(%d): matched size is %d, addr = %x\n", __func__, __LINE__, depth, ret);
-		
-		((struct heap_block_chunk *)ret)->size = adj_size;
-		return CHUNK_TO_BLOCK(ret);
-	}
-
-	printf("%s(%d): matched size is not exist %d\n", __func__, __LINE__, depth);
-	
-	/* retry with split */
-	cur_depth = depth - 1;
-	/* find available larger block */
-	while (size_head[cur_depth] == NULL && cur_depth > 0)
-		cur_depth--;
-
-	printf("%s(%d): split from %d to %d\n", __func__, __LINE__, cur_depth, depth);
-	if (size_head[cur_depth] != NULL) {
-		for (; cur_depth < depth; cur_depth++) {
-			printf("%s(%d): do split %d\n", __func__, __LINE__, cur_depth);
-			if (_split_buddy_block(cur_depth) == FALSE)
-				return NULL;
-		}
-	}
-
-	ret = size_head[depth];
-	size_head[depth] = size_head[depth]->next;
-	printf("%s(%d): matched size is %d, addr = %x\n", __func__, __LINE__, depth, ret);
-
+end:
 	((struct heap_block_chunk *)ret)->size = adj_size;
 	return CHUNK_TO_BLOCK(ret);;
 }
@@ -213,6 +257,7 @@ int main(void)
 	/* }	 */
 	/* printf("----------------------------2power test end\n"); */
 
+    
 	aa = (char *)alloc_heap(1);
 	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
 	printf("------------------------------------------\n");
@@ -224,9 +269,16 @@ int main(void)
 	printf("------------------------------------------\n");
 	aa = (char *)alloc_heap(50);
 	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
-	printf("------------------------------------------\n");
-	aa = (char *)alloc_heap(50);
-	printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
-	
+    for (int i = 0; i < 5000; i++) {
+        printf("------------------------------------------\n");
+        aa = (char *)alloc_heap(500);
+        if (aa == NULL) {
+            printf("alloc fail %d\n", i);
+            break;
+        }
+        else
+            printf("alloced size is %d\n", BLOCK_TO_CHUNK(aa)->size);
+
+	}
 	return 0;
 }
