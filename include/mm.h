@@ -17,5 +17,30 @@ typedef uint64 addr_t;
 typedef uint64 page_t;
 
 /* extern void *alloc_heap(uint32 size); */
+#define BUDDY_MAX_DEPTH 22 /* 2mb */
+#define BUDDY_MIN_SIZE_SHIFT 5 /* 32byte */
+#define BUDDY_AVAILABLE_DEPTH (BUDDY_MAX_DEPTH - BUDDY_MIN_SIZE_SHIFT)
+#define BUDDY_ENTRY_ROOT_SIZE (1 << (BUDDY_MAX_DEPTH - 1))
+
+#define BLOCK_TO_CHUNK(__block) (((struct heap_block_chunk *)(__block)) - 1)
+#define CHUNK_TO_BLOCK(__block) (((struct heap_block_chunk *)(__block)) + 1)
+
+struct buddy_entry {
+	struct buddy_entry *next;
+	uint32 size;
+};
+
+struct heap_block_chunk {
+    struct buddy_block_root *root;
+	uint16 depth;
+	uint32 size;
+};
+
+struct buddy_block_root {
+    struct buddy_entry *size_head[BUDDY_AVAILABLE_DEPTH];
+	uint32 used_size;
+	uint32 free_size;
+    struct buddy_block_root *next;
+};
 
 #endif
