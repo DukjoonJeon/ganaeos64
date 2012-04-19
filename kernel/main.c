@@ -24,7 +24,7 @@ void memory_test(void)
 	free_heap(c);
 
 	for (int i = 0; i < 1000; i++) {
-		a = (char *)alloc_heap(3000);
+		a = (char *)alloc_heap(30000);
 	}
 }
 
@@ -32,7 +32,7 @@ void start_kernel(void)
 {
 	init_mm();
 
-
+	memory_test();
 
 	while (1) {
 		halt();

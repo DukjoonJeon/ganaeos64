@@ -1,9 +1,9 @@
-#define PML4_SEG   0x900
-#define PDPTE_SEG  0xA00
-#define PDE_SEG    0xB00
-#define PTE_SEG    0xC00 /* 0 ~ 2mbyte */
-#define PTE_SEG2   0xD00 /* 2 ~ 4mbyte */
-#define KERNEL_SEG 0xE00
+#define PML4_SEG   0x1000
+#define PDPTE_SEG  0x1100
+#define PDE_SEG    0x1200
+#define PTE_SEG    0x1300 /* 0 ~ 2mbyte */
+#define PTE_SEG2   0x1400 /* 2 ~ 4mbyte */
+/* #define KERNEL_SEG 0xE00 */
 	
 	.code16
 	.section ".bl.text16", "ax"
@@ -49,26 +49,26 @@ init_bootloader:
 	/* set PML4 */
 	movw $PML4_SEG, %ax
 	movw %ax, %es
-	movw $PDPTE_SEG << 4, %bx
-	addw $7, %bx
-	movw %bx, %es:(%si)
+	movl $PDPTE_SEG << 4, %ebx
+	addl $7, %ebx
+	movl %ebx, %es:(%si)
 	/* set PDPTE */
 	movw $PDPTE_SEG, %ax
 	movw %ax, %es
-	movw $PDE_SEG << 4, %bx
-	addw $7, %bx
-	movw %bx, %es:(%si)
+	movl $PDE_SEG << 4, %ebx
+	addl $7, %ebx
+	movl %ebx, %es:(%si)
 	/* set PDE */
 	movw $PDE_SEG, %ax
 	movw %ax, %es
-	movw $PTE_SEG << 4, %bx
-	addw $7, %bx
-	movw %bx, %es:(%si)
+	movl $PTE_SEG << 4, %ebx
+	addl $7, %ebx
+	movl %ebx, %es:(%si)
 	/* set PDE2 */
-	movw $PTE_SEG2 << 4, %bx
-	addw $7, %bx
+	movl $PTE_SEG2 << 4, %ebx
+	addl $7, %bx
 	addw $8, %si
-	movw %bx, %es:(%si)
+	movl %ebx, %es:(%si)
 	/* set PTE */
 	movw $PTE_SEG, %ax
 	movw %ax, %es

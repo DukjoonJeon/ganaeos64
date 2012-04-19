@@ -7,7 +7,6 @@ SECTIONS
 		.text 0x8000 : {
 				*(.text.start)
 			  	*(.text)
-			  	*(.text.*)
 		}
 
 		.eh_frame : {

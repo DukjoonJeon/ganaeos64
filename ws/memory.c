@@ -385,54 +385,53 @@ int main(void)
 
 	/* } */
 
-	/* printf("------------------------------------------\n"); */
-	/* aa = (char *)alloc_heap(500 * 10); */
-	/* if (aa == NULL) { */
-	/* 	printf("alloc fail %d\n", i); */
+	printf("------------------------------------------\n");
+	aa = (char *)alloc_heap(500 * 10);
+	if (aa == NULL) {
+		printf("alloc fail %d\n", i);
 
-	/* } */
-	/* else */
-	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+	}
+	else
+		printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa);
 
-	/* printf("------------------------------------------\n"); */
-	/* bb = (char *)alloc_heap(500 * 10); */
-	/* if (bb == NULL) { */
-	/* 	printf("alloc fail %d\n", i); */
+	printf("------------------------------------------\n");
+	bb = (char *)alloc_heap(500 * 10);
+	if (bb == NULL) {
+		printf("alloc fail %d\n", i);
 
-	/* } */
-	/* else */
-	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(bb)->size, bb); */
+	}
+	else
+		printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(bb)->size, bb);
 
-	/* printf("------------------------------------------\n"); */
-	/* cc = (char *)alloc_heap(500 * 10); */
-	/* if (cc == NULL) { */
-	/* 	printf("alloc fail %d\n", i); */
+	printf("------------------------------------------\n");
+	cc = (char *)alloc_heap(500 * 10);
+	if (cc == NULL) {
+		printf("alloc fail %d\n", i);
 
-	/* } */
-	/* else */
-	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(cc)->size, cc); */
+	}
+	else
+		printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(cc)->size, cc);
 	
-	/* free_heap(aa); */
-	/* free_heap(bb); */
-	/* free_heap(cc);	 */
+	free_heap(aa);
+	free_heap(cc);
 
-	/* printf("------------------------------------------\n"); */
-	/* aa = (char *)alloc_heap(500 * 10); */
-	/* if (aa == NULL) { */
-	/* 	printf("alloc fail %d\n", i); */
+	printf("------------------------------------------\n");
+	aa = (char *)alloc_heap(500 * 10);
+	if (aa == NULL) {
+		printf("alloc fail %d\n", i);
 
-	/* } */
-	/* else */
-	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+	}
+	else
+		printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa);
 
-	/* printf("------------------------------------------\n"); */
-	/* aa = (char *)alloc_heap(500 * 10); */
-	/* if (aa == NULL) { */
-	/* 	printf("alloc fail %d\n", i); */
+	printf("------------------------------------------\n");
+	aa = (char *)alloc_heap(500 * 10);
+	if (aa == NULL) {
+		printf("alloc fail %d\n", i);
 
-	/* } */
-	/* else */
-	/* 	printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa); */
+	}
+	else
+		printf("alloced size is %d, addr is %x\n", BLOCK_TO_CHUNK(aa)->size, aa);
 
     /* for (int i = 0; i < 5000; i++) { */
     /*     printf("------------------------------------------\n"); */

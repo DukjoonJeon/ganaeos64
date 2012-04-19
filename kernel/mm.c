@@ -15,17 +15,101 @@ struct physical_memory_block {
 #define PAGE_ENTRYSHIFT 9
 #define PAGE_ENTRYCNT (PAGESIZE / PAGE_ENTRYSIZE)
 
-
-
 #define INIT_FREE_PHY_MEM_START (2 * 1024 * 1024)
 #define INIT_FREE_PHY_MEM_END (4 * 1024 * 1024 - 1)
+
+#define MAX_SUPPORT_LOGICAL_MEM_SIZE (4 * 1024 * 1024 * 1024)
+
+#define BUDDY_BLOCK_SIZE (2 * 1024 * 1024)
 
 struct physical_memory_block *start_entry = NULL;
 
 struct buddy_block_root *buddy_block_root_list = NULL;
 struct buddy_block_root *buddy_block_next_available;
 
+struct used_logical_addr {
+    void *start_addr;
+    uint64 size;
+    struct used_logical_addr *next;
+};
+
+struct used_logical_addr used_logical_addr_list;
+
+boolean is_power_of_2(uint64 num)
+{
+	if (num && !(num & (num - 1))) {
+		return TRUE;
+	}
+    return FALSE;
+}
+
+void init_used_logical_addr_list(void)
+{
+    used_logical_addr_list.start_addr = (void *)0;
+    used_logical_addr_list.size = INIT_FREE_PHY_MEM_END + 1;
+    used_logical_addr_list.next = NULL;
+}
+
 extern void *alloc_heap(uint32 size);
+extern void free_heap(void *block);
+
+void *request_logical_addr(uint64 size)
+{
+    struct used_logical_addr *cur = &used_logical_addr_list;
+    struct used_logical_addr *new_addr;
+    void *ret = NULL;
+
+    while (cur->next != NULL) {
+        if (cur->start_addr + cur->size + size < cur->next->start_addr) {
+            new_addr = (struct used_logical_addr *)alloc_heap(
+                sizeof (struct used_logical_addr));
+            if (new_addr == NULL)
+                goto end;
+
+            new_addr->start_addr = cur->start_addr + cur->size;
+            new_addr->size = size;
+            new_addr = cur->next;
+            cur->next = new_addr;
+            ret = new_addr->start_addr;
+            goto end;
+        }
+        cur = cur->next;
+    }
+
+    new_addr = (struct used_logical_addr *)alloc_heap(
+        sizeof (struct used_logical_addr));
+    if (new_addr == NULL)
+        goto end;
+    
+    new_addr->start_addr = cur->start_addr + cur->size;
+    new_addr->size = size;
+    new_addr = cur->next;
+    cur->next = new_addr;
+    ret = new_addr->start_addr;
+    
+end:
+    return ret;
+}
+
+boolean release_logical_addr(void *addr)
+{
+    struct used_logical_addr *cur = &used_logical_addr_list;
+
+    /* make a error if addr is 0 */
+    if (addr == (void *)0)
+        return FALSE;
+
+    while (cur->next != NULL) {
+        if (cur->next->start_addr == addr) {
+            struct used_logical_addr *del_addr = cur->next;
+            cur->next = cur->next->next;
+            free_heap(del_addr);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
 
 static boolean is_aligned(void *addr, uint32 align)
 {
@@ -230,23 +314,31 @@ static boolean get_physical_addr(__IN void *logical_addr,
 }
 
 static boolean get_free_physical_memory_block(
-    __OUT struct physical_memory_block **block)
+    __OUT struct physical_memory_block *block)
 {
     ASSERT(block != NULL);
     
     if (start_entry == NULL)
         return FALSE;
 
-    *block = start_entry;
+    *block = *start_entry;
     start_entry = start_entry->next;
+    free_heap(start_entry);
 
     return TRUE;
 }
 
 static boolean add_free_physical_memory_block(
-    __IN struct physical_memory_block *block)
+    __IN void *physical_addr)
 {
-    ASSERT(block != NULL);
+    struct physical_memory_block *block;
+
+    ASSERT(physical_addr != NULL);
+
+    block = (struct physical_memory_block *)alloc_heap(
+        sizeof (struct physical_memory_block));
+    if (block == NULL)
+        return FALSE;
 
     block->next = start_entry;
     start_entry = block;
@@ -254,99 +346,117 @@ static boolean add_free_physical_memory_block(
     return TRUE;
 }
 
-static void _init_first_free_physical_memory_block(void)
+static boolean get_available_physical_memory_block(__IN uint64 size)
 {
-    void *cur = (void *)INIT_FREE_PHY_MEM_START;
+    uint64 count;
+    struct physical_memory_block *cur;
+
+    ASSERT(size > 0);
+    ASSERT((size % PAGESIZE) == 0);
+
+    cur = start_entry;
+    count = size / PAGESIZE;
+    
+    while (cur != NULL && count) {
+        count--;
+        cur = cur->next;
+    }
+
+    return count == 0? TRUE: FALSE;
+}
+
+static void init_first_free_physical_memory_block(void)
+{
+    void *cur = (void *)(INIT_FREE_PHY_MEM_START + BUDDY_BLOCK_SIZE);
     struct physical_memory_block *block;
 
     while (cur < (void *)INIT_FREE_PHY_MEM_END) {
-        block = (struct physical_memory_block *)cur;
-        block->addr = cur;
-        if (add_free_physical_memory_block(block) == FALSE)
+        if (add_free_physical_memory_block(cur) == FALSE)
             abort();
         cur += PAGESIZE;
     }
 }
 
-static void init_physical_memory_block(__IN addr_t physical_memory_size)
-{
-    uint16 pml4_index = 0;
-    uint16 pdpte_index = 0;
-    uint16 pde_index = 0; 
-    uint16 pte_index = 0;
-    page_t *pml4_addr;
-    page_t *pdpte_addr;
-    page_t *pde_addr;
-    page_t *pte_addr;
-    page_t page;
-    struct physical_memory_block *free_memory_block;
-    page_t *current;
+/* static void init_physical_memory_block(__IN addr_t physical_memory_size) */
+/* { */
+/*     uint16 pml4_index = 0; */
+/*     uint16 pdpte_index = 0; */
+/*     uint16 pde_index = 0;  */
+/*     uint16 pte_index = 0; */
+/*     page_t *pml4_addr; */
+/*     page_t *pdpte_addr; */
+/*     page_t *pde_addr; */
+/*     page_t *pte_addr; */
+/*     page_t page; */
+/*     struct physical_memory_block free_memory_block; */
+/*     page_t *current; */
 
-    ASSERT(physical_memory_size > UP_TO_DIRECT_MAPPED_PAGE);
+/*     ASSERT(physical_memory_size > UP_TO_DIRECT_MAPPED_PAGE); */
 
-	current = (page_t *)INIT_FREE_PHY_MEM_END + 1;
+/* 	current = (page_t *)INIT_FREE_PHY_MEM_END + 1; */
         
-    pml4_addr = get_pml4();
-    while (current < (page_t *)physical_memory_size) {
-        pml4_index = get_pml4_index(current);
-        pdpte_index = get_pdpte_index(current);
-        pde_index = get_pde_index(current);
-        pte_index = get_pte_index(current);
+/*     pml4_addr = get_pml4(); */
+/*     while (current < (page_t *)physical_memory_size) { */
+/*         pml4_index = get_pml4_index(current); */
+/*         pdpte_index = get_pdpte_index(current); */
+/*         pde_index = get_pde_index(current); */
+/*         pte_index = get_pte_index(current); */
 
-        /* check existing pml4 entry */
-        page = *(pml4_addr + pml4_index);
-        /* make new entry if not exist */
-        if ((page & PAGE_P_BIT) == 0) {
-            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
-                abort();
-            *(pml4_addr + pml4_index) = 
-                (page_t)free_memory_block->addr | PAGE_P_BIT |
-                PAGE_RW_BIT | PAGE_US_BIT;
-            page = (page_t)free_memory_block->addr;
-            memset((void *)page, 0, PAGESIZE);
-        }
+/*         /\* check existing pml4 entry *\/ */
+/*         page = *(pml4_addr + pml4_index); */
+/*         /\* make new entry if not exist *\/ */
+/*         if ((page & PAGE_P_BIT) == 0) { */
+/*             if (get_free_physical_memory_block(&free_memory_block) == FALSE) */
+/*                 abort(); */
+/*             *(pml4_addr + pml4_index) =  */
+/*                 (page_t)free_memory_block.addr | PAGE_P_BIT | */
+/*                 PAGE_RW_BIT | PAGE_US_BIT; */
+/*             page = (page_t)free_memory_block.addr; */
+/*             memset((void *)page, 0, PAGESIZE); */
+/*         } */
 
-        pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1));
-        page = *(pdpte_addr + pdpte_index);
-        /* make new entry if not exist */
-        if ((page & PAGE_P_BIT) == 0) {
-            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
-                abort();
-            *(pdpte_addr + pdpte_index) =
-                (page_t)free_memory_block->addr | PAGE_P_BIT |
-                PAGE_RW_BIT | PAGE_US_BIT;
-            page = (page_t)free_memory_block->addr;
-            memset((void *)page, 0, PAGESIZE);
-        }
+/*         pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1)); */
+/*         page = *(pdpte_addr + pdpte_index); */
+/*         /\* make new entry if not exist *\/ */
+/*         if ((page & PAGE_P_BIT) == 0) { */
+/*             if (get_free_physical_memory_block(&free_memory_block) == FALSE) */
+/*                 abort(); */
+/*             *(pdpte_addr + pdpte_index) = */
+/*                 (page_t)free_memory_block.addr | PAGE_P_BIT | */
+/*                 PAGE_RW_BIT | PAGE_US_BIT; */
+/*             page = (page_t)free_memory_block.addr; */
+/*             memset((void *)page, 0, PAGESIZE); */
+/*         } */
 
-        pde_addr = (page_t *)(page & ~(PAGESIZE - 1));
-        page = *(pde_addr + pde_index);
-        /* make new entry if not exist */
-        if ((page & PAGE_P_BIT) == 0) {
-            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
-                abort();
-            *(pde_addr + pde_index) =
-                (page_t)free_memory_block->addr | PAGE_P_BIT |
-                PAGE_RW_BIT | PAGE_US_BIT;
-            page = (page_t)free_memory_block->addr;
-            memset((void *)page, 0, PAGESIZE);
-        }
+/*         pde_addr = (page_t *)(page & ~(PAGESIZE - 1)); */
+/*         page = *(pde_addr + pde_index); */
+/*         /\* make new entry if not exist *\/ */
+/*         if ((page & PAGE_P_BIT) == 0) { */
+/*             if (get_free_physical_memory_block(&free_memory_block) == FALSE) */
+/*                 abort(); */
+/*             *(pde_addr + pde_index) = */
+/*                 (page_t)free_memory_block.addr | PAGE_P_BIT | */
+/*                 PAGE_RW_BIT | PAGE_US_BIT; */
+/*             page = (page_t)free_memory_block.addr; */
+/*             memset((void *)page, 0, PAGESIZE); */
+/*         } */
 
-        pte_addr = (page_t *)(page & ~(PAGESIZE - 1));
-        *(pte_addr + pte_index) = 
-            (page_t)current | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT;
+/*         pte_addr = (page_t *)(page & ~(PAGESIZE - 1)); */
+/*         *(pte_addr + pte_index) =  */
+/*             (page_t)current | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT; */
 
-        /* add new free memory block */
-        /* if (current > INIT_FREE_PHY_MEM_END) { */
-        /*     ((struct physical_memory_block *)current)->addr = current; */
-        /*     add_free_physical_memory_block((struct physical_memory_block *)current); */
-        /* } */
+/*         /\* add new free memory block *\/ */
+/*         /\* if (current > INIT_FREE_PHY_MEM_END) { *\/ */
+/*         /\*     ((struct physical_memory_block *)current)->addr = current; *\/ */
+/*         /\*     add_free_physical_memory_block((struct physical_memory_block *)current); *\/ */
+/*         /\* } *\/ */
         
-        current = ((uint8 *)current) + PAGESIZE;
-    }
-}
+/*         current = ((uint8 *)current) + PAGESIZE; */
+/*     } */
+/* } */
 
-boolean init_heap(struct buddy_block_root *buddy_block_root, void *heap_addr)
+boolean init_heap(__IN struct buddy_block_root *buddy_block_root,
+                  __IN void *heap_addr)
 {
 	uint16 loopi;
 	struct buddy_block_root *cur_block_root;
@@ -393,7 +503,7 @@ boolean init_heap(struct buddy_block_root *buddy_block_root, void *heap_addr)
 	return TRUE;
 }
 
-uint32 round_up_to_next_power_of_2(uint32 size)
+uint32 round_up_to_next_power_of_2(__IN uint32 size)
 {
 	/* round up the next highest power of 2 */
     /* http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2 */
@@ -406,9 +516,9 @@ uint32 round_up_to_next_power_of_2(uint32 size)
 	return size + 1;
 }
 
-boolean get_depth(uint32 size, uint16 *depth)
+boolean get_depth(__IN uint32 size, __OUT uint16 *depth)
 {
-	int count_depth = 0;
+	int16 count_depth = 0;
 
 	if ((size && !(size & (size - 1))) == 0) {
 		/* fprintf(stderr, "it is not power of 2\n"); */
@@ -426,7 +536,8 @@ boolean get_depth(uint32 size, uint16 *depth)
 	return TRUE;
 }
 
-boolean _split_buddy_block(struct buddy_block_root *block_root, uint16 depth)
+boolean _split_buddy_block(__IN struct buddy_block_root *block_root,
+                           __IN uint16 depth)
 {
 	struct buddy_entry *first_buddy_entry;
 	struct buddy_entry *second_buddy_entry;
@@ -544,14 +655,101 @@ void *_alloc_heap(uint32 adj_size)
     return ret;
 }
 
+boolean fill_physical_page_in_logical_addr(void *logical_addr, uint64 size)
+{
+    uint16 pml4_index = 0;
+    uint16 pdpte_index = 0;
+    uint16 pde_index = 0; 
+    uint16 pte_index = 0;
+    page_t *pml4_addr;
+    page_t *pdpte_addr;
+    page_t *pde_addr;
+    page_t *pte_addr;
+    page_t page;
+    struct physical_memory_block free_memory_block;
+    void *physical_addr;
+    void *physical_logical;
+
+    /* ASSERT(physical_memory_size > UP_TO_DIRECT_MAPPED_PAGE); */
+
+    if (get_available_physical_memory_block(BUDDY_BLOCK_SIZE) == FALSE)
+        return FALSE;
+
+    pml4_addr = get_pml4();
+    while (logical_addr < logical_addr + size) {
+        /* it will be success */
+        get_free_physical_memory_block(&free_memory_block);
+        physical_addr = free_memory_block.addr;
+
+        pml4_index = get_pml4_index(logical_addr);
+        pdpte_index = get_pdpte_index(logical_addr);
+        pde_index = get_pde_index(logical_addr);
+        pte_index = get_pte_index(logical_addr);
+
+        /* check existing pml4 entry */
+        page = *(pml4_addr + pml4_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+                abort();
+            *(pml4_addr + pml4_index) = 
+                (page_t)free_memory_block.addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)free_memory_block.addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
+
+        pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        page = *(pdpte_addr + pdpte_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+                abort();
+            *(pdpte_addr + pdpte_index) =
+                (page_t)free_memory_block.addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)free_memory_block.addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
+
+        pde_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        page = *(pde_addr + pde_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+                abort();
+            *(pde_addr + pde_index) =
+                (page_t)free_memory_block.addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)free_memory_block.addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
+
+        pte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        *(pte_addr + pte_index) = 
+            (page_t)physical_addr | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT;
+
+        logical_addr = ((uint8 *)logical_addr) + PAGESIZE;
+    }
+
+    return TRUE;
+}
+
 boolean add_new_buddy_block_root(void)
 {
-	return FALSE;
-    /* get free addr 2mb */
-	/* mapping 2mb */
+    void *logical_addr;
+    boolean ret;
 
-	/* if (init_heap(buddy_block_next_available) == FALSE) */
-	/* 	return FALSE; */
+    logical_addr = request_logical_addr(BUDDY_BLOCK_SIZE);
+    if (logical_addr == NULL)
+        return FALSE;
+
+    ret = fill_physical_page_in_logical_addr(logical_addr, BUDDY_BLOCK_SIZE);
+    if (ret == FALSE)
+        return FALSE;
+    
+	if (init_heap(buddy_block_next_available, logical_addr) == FALSE)
+		return FALSE;
 }
 
 void *alloc_heap(uint32 size)
@@ -630,7 +828,7 @@ boolean init_alloc(void)
 {
 	static struct buddy_block_root buddy_block_root_first;
 
-	return init_heap(&buddy_block_root_first, INIT_FREE_PHY_MEM_START);
+	return init_heap(&buddy_block_root_first, (void *)INIT_FREE_PHY_MEM_START);
 }
 
 uint64 get_physical_mem_size(void)
@@ -642,8 +840,10 @@ void init_mm(void)
 {
 	uint64 phys_mem_size;
 
-	_init_first_free_physical_memory_block();
 	phys_mem_size = get_physical_mem_size();
+    init_used_logical_addr_list();
 	init_alloc();
-	init_physical_memory_block(phys_mem_size);
+	init_first_free_physical_memory_block();
+
+	/* init_physical_memory_block(phys_mem_size); */
 }
