@@ -22,10 +22,11 @@ struct physical_memory_block {
 
 #define BUDDY_BLOCK_SIZE (2 * 1024 * 1024)
 
-struct physical_memory_block *start_entry = NULL;
+struct physical_memory_block *start_entry;
 
-struct buddy_block_root *buddy_block_root_list = NULL;
+struct buddy_block_root *buddy_block_root_list;
 struct buddy_block_root *buddy_block_next_available;
+struct used_logical_addr *prepair_out_of_memory_for_request_logical_addr;
 
 struct used_logical_addr {
     void *start_addr;
@@ -53,6 +54,7 @@ void init_used_logical_addr_list(void)
 extern void *alloc_heap(uint32 size);
 extern void free_heap(void *block);
 
+
 void *request_logical_addr(uint64 size)
 {
     struct used_logical_addr *cur = &used_logical_addr_list;
@@ -61,8 +63,10 @@ void *request_logical_addr(uint64 size)
 
     while (cur->next != NULL) {
         if (cur->start_addr + cur->size + size < cur->next->start_addr) {
-            new_addr = (struct used_logical_addr *)alloc_heap(
-                sizeof (struct used_logical_addr));
+            /* new_addr = (struct used_logical_addr *)alloc_heap( */
+            /*     sizeof (struct used_logical_addr)); */
+            new_addr = prepair_out_of_memory_for_request_logical_addr;
+            prepair_out_of_memory_for_request_logical_addr = NULL;
             if (new_addr == NULL)
                 goto end;
 
@@ -76,8 +80,10 @@ void *request_logical_addr(uint64 size)
         cur = cur->next;
     }
 
-    new_addr = (struct used_logical_addr *)alloc_heap(
-        sizeof (struct used_logical_addr));
+    /* new_addr = (struct used_logical_addr *)alloc_heap( */
+    /*     sizeof (struct used_logical_addr)); */
+    new_addr = prepair_out_of_memory_for_request_logical_addr;
+    prepair_out_of_memory_for_request_logical_addr = NULL;
     if (new_addr == NULL)
         goto end;
     
@@ -754,6 +760,7 @@ boolean add_new_buddy_block_root(void)
 
 void *alloc_heap(uint32 size)
 {
+
 	uint32 adj_size;
 
 	boolean success;
@@ -836,14 +843,29 @@ uint64 get_physical_mem_size(void)
 	return 64 * 1024 * 1024;
 }
 
+void init_global_vars(void)
+{
+    start_entry = NULL;
+    buddy_block_root_list = NULL;
+}
+
+void prealloced_for_out_of_memory()
+{
+    prepair_out_of_memory_for_request_logical_addr = 
+        (struct used_logical_addr *)alloc_heap(
+            sizeof (struct used_logical_addr));
+
+}
+
 void init_mm(void)
 {
 	uint64 phys_mem_size;
 
+    init_global_vars();
 	phys_mem_size = get_physical_mem_size();
     init_used_logical_addr_list();
 	init_alloc();
 	init_first_free_physical_memory_block();
-
+    prealloced_for_out_of_memory();
 	/* init_physical_memory_block(phys_mem_size); */
 }

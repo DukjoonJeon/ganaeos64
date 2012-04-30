@@ -29,7 +29,7 @@ init_bootloader:
 	
 	/* read floppy's sectors into mem */
 	movb $0x2, %ah
-	movb $10, %al /* num of sectors */
+	movb $20, %al /* num of sectors */
 	movb $0, %ch /* cylinder & 0xff */
 	movb $2, %cl /* sector number 1 to 63 */
 	movb $0, %dh /* head */
@@ -66,7 +66,7 @@ init_bootloader:
 	movl %ebx, %es:(%si)
 	/* set PDE2 */
 	movl $PTE_SEG2 << 4, %ebx
-	addl $7, %bx
+	addl $7, %ebx
 	addw $8, %si
 	movl %ebx, %es:(%si)
 	/* set PTE */

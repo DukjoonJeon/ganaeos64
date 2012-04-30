@@ -16,7 +16,9 @@ extern void init_mm(void);
 typedef uint64 addr_t;
 typedef uint64 page_t;
 
-/* extern void *alloc_heap(uint32 size); */
+extern void *alloc_heap(uint32 size);
+extern void free_heap(void *block);
+
 #define BUDDY_MAX_DEPTH 22 /* 2mb */
 #define BUDDY_MIN_SIZE_SHIFT 5 /* 32byte */
 #define BUDDY_AVAILABLE_DEPTH (BUDDY_MAX_DEPTH - BUDDY_MIN_SIZE_SHIFT)
