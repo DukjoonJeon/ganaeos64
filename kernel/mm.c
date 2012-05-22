@@ -16,9 +16,7 @@ struct physical_memory_block {
 #define PAGE_ENTRYCNT (PAGESIZE / PAGE_ENTRYSIZE)
 
 #define INIT_FREE_PHY_MEM_START (2 * 1024 * 1024)
-#define INIT_FREE_PHY_MEM_END (4 * 1024 * 1024 - 1)
-
-#define MAX_SUPPORT_LOGICAL_MEM_SIZE (4 * 1024 * 1024 * 1024)
+#define INIT_FREE_PHY_MEM_END (8 * 1024 * 1024 - 1)
 
 #define BUDDY_BLOCK_SIZE (2 * 1024 * 1024)
 
@@ -44,10 +42,10 @@ boolean is_power_of_2(uint64 num)
     return FALSE;
 }
 
-void init_used_logical_addr_list(void)
+void init_used_logical_addr_list(uint64 physical_memory_size)
 {
     used_logical_addr_list.start_addr = (void *)0;
-    used_logical_addr_list.size = INIT_FREE_PHY_MEM_END + 1;
+    used_logical_addr_list.size = physical_memory_size;
     used_logical_addr_list.next = NULL;
 }
 
@@ -72,7 +70,7 @@ void *request_logical_addr(uint64 size)
 
             new_addr->start_addr = cur->start_addr + cur->size;
             new_addr->size = size;
-            new_addr = cur->next;
+            new_addr->next = cur->next;
             cur->next = new_addr;
             ret = new_addr->start_addr;
             goto end;
@@ -89,7 +87,7 @@ void *request_logical_addr(uint64 size)
     
     new_addr->start_addr = cur->start_addr + cur->size;
     new_addr->size = size;
-    new_addr = cur->next;
+    new_addr->next = cur->next;
     cur->next = new_addr;
     ret = new_addr->start_addr;
     
@@ -138,85 +136,6 @@ static page_t *get_pml4(void)
 
     return (page_t *)pml4_addr;
 }
-
-/* static void *_find_available_logcal_addr_in_page(page_t *target, uint16 req_cnt) */
-/* { */
-/* 	uint16 index; */
-/* 	void *found_addr = NULL; */
-
-
-/* 	for (index = 0; index < PAGE_ENTRYCNT; index++) { */
-/* 		uint16 cnt; */
-/* 		if (*(target + index) & PAGE_P_BIT) */
-/* 			cnt = 0; */
-/* 		else */
-/* 			cnt++; */
-
-/* 		if (cnt == req_cnt) */
-/* 			found_addr = target + index - cnt; */
-/* 	} */
-/* 	if (index == PAGE_ENTRYCNT) */
-/* 		return NULL; */
-/* } */
-
-/* static void *find_available_logical_addr(__IN uint32 size) */
-/* { */
-/* 	uint32 pageblock; */
-/* 	uint32 req_pml4_cnt; */
-/* 	uint32 req_pdpte_cnt; */
-/* 	uint32 req_pde_cnt; */
-/* 	uint32 req_pte_cnt; */
-/* 	page_t *pml4; */
-/* 	page_t *pdpte; */
-/* 	page_t *pde; */
-/* 	page_t *pte; */
-/* 	uint16 index_pml4; */
-
-/* 	void *found_addr = NULL; */
-
-/* 	ASSERT(size != 0); */
-/* 	ASSERT(is_aligned(size, PAGESIZE) == TRUE); */
-
-/* 	req_pml4_cnt = get_pml4_index(size); */
-/* 	req_pdpte_cnt = get_pdpte_index(size); */
-/* 	req_pde_cnt = get_pde_index(size); */
-/* 	req_pte_cnt = get_pte_index(size); */
-
-/* 	/\* chehck it is unused *\/ */
-/* 	pml4 = get_pml4(); */
-/* 	if (req_pml4_cnt) { */
-/* 		for (index_pml4 = 0; index_pml4 < PAGE_ENTRYCNT; index_pml4++) { */
-/* 			uint16 cnt; */
-/* 			if (*(pml4 + index_pml4) & PAGE_P_BIT) */
-/* 				cnt = 0; */
-/* 			else */
-/* 				cnt++; */
-
-/* 			if (cnt == req_pml4_cnt +  */
-/* 				!!(!!req_pdpte_cnt + !!req_pde_cnt + !!req_pte_cnt)) */
-/* 				found_addr = pml4 + index_pml4 - cnt; */
-/* 		} */
-/* 		if (index_pml4 == PAGE_ENTRYCNT) */
-/* 			return NULL; */
-/* 	} */
-
-/* 	if (req_pdpte_cnt_cnt && found_addr == NULL) { */
-/* 		index_pml4 = 0; */
-/* 		pdpte = pde_addr = (page_t *)(pml4 & ~(PAGESIZE - 1)); */
-/* 		for (index_pdpte = 0; index_pdpte < PAGE_ENTRYCNT; index_pdpte++) { */
-/* 			uint16 cnt; */
-/* 			if (*(pml4 + index_pml4) & PAGE_P_BIT) */
-/* 				cnt = 0; */
-/* 			else */
-/* 				cnt++; */
-
-/* 			if (cnt == req_pml4_cnt +  */
-/* 				!!(!!req_pdpte_cnt + !!req_pde_cnt + !!req_pte_cnt)) */
-/* 				found_addr = pml4 + index_pml4 - cnt; */
-/* 		} */
-/* 	} */
-	
-/* } */
 
 static boolean get_child_page_by_index(__IN page_t *parent_addr,
                                        __IN uint16 index,
@@ -320,16 +239,19 @@ static boolean get_physical_addr(__IN void *logical_addr,
 }
 
 static boolean get_free_physical_memory_block(
-    __OUT struct physical_memory_block *block)
+    __OUT void **phys_addr)
 {
+    struct physical_memory_block *block;
+
     ASSERT(block != NULL);
     
     if (start_entry == NULL)
         return FALSE;
 
-    *block = *start_entry;
+    block = start_entry;
     start_entry = start_entry->next;
-    free_heap(start_entry);
+    *phys_addr = block->addr;
+    free_heap(block);
 
     return TRUE;
 }
@@ -346,6 +268,7 @@ static boolean add_free_physical_memory_block(
     if (block == NULL)
         return FALSE;
 
+    block->addr = physical_addr;
     block->next = start_entry;
     start_entry = block;
 
@@ -371,95 +294,86 @@ static boolean get_available_physical_memory_block(__IN uint64 size)
     return count == 0? TRUE: FALSE;
 }
 
-static void init_first_free_physical_memory_block(void)
+static void init_first_free_physical_memory_block(uint64 physical_memory_size)
 {
     void *cur = (void *)(INIT_FREE_PHY_MEM_START + BUDDY_BLOCK_SIZE);
     struct physical_memory_block *block;
+    uint16 pml4_index = 0;
+    uint16 pdpte_index = 0;
+    uint16 pde_index = 0; 
+    uint16 pte_index = 0;
+    page_t *pml4_addr;
+    page_t *pdpte_addr;
+    page_t *pde_addr;
+    page_t *pte_addr;
+    page_t page;
+    void *new_physical_addr;
+    void *physical_addr;
+    void *physical_logical;
 
+    /* premapped memory */
     while (cur < (void *)INIT_FREE_PHY_MEM_END) {
         if (add_free_physical_memory_block(cur) == FALSE)
             abort();
         cur += PAGESIZE;
     }
+
+    pml4_addr = get_pml4();
+    while (cur < (void *)physical_memory_size) {
+        pml4_index = get_pml4_index(cur);
+        pdpte_index = get_pdpte_index(cur);
+        pde_index = get_pde_index(cur);
+        pte_index = get_pte_index(cur);
+
+        /* check existing pml4 entry */
+        page = *(pml4_addr + pml4_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&physical_addr) == FALSE)
+                abort();
+            *(pml4_addr + pml4_index) = 
+                (page_t)physical_addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)physical_addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
+
+        pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        page = *(pdpte_addr + pdpte_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&physical_addr) == FALSE)
+                abort();
+            *(pdpte_addr + pdpte_index) =
+                (page_t)physical_addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)physical_addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
+
+        pde_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        page = *(pde_addr + pde_index);
+        /* make new entry if not exist */
+        if ((page & PAGE_P_BIT) == 0) {
+            if (get_free_physical_memory_block(&physical_addr) == FALSE)
+                abort();
+            *(pde_addr + pde_index) =
+                (page_t)physical_addr | PAGE_P_BIT |
+                PAGE_RW_BIT | PAGE_US_BIT;
+            page = (page_t)physical_addr;
+            memset((void *)page, 0, PAGESIZE);
+        }
+
+        pte_addr = (page_t *)(page & ~(PAGESIZE - 1));
+        *(pte_addr + pte_index) = 
+            (page_t)cur | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT;
+
+        if (add_free_physical_memory_block(cur) == FALSE)
+            abort();
+
+        cur = ((uint8 *)cur) + PAGESIZE;
+    }
 }
-
-/* static void init_physical_memory_block(__IN addr_t physical_memory_size) */
-/* { */
-/*     uint16 pml4_index = 0; */
-/*     uint16 pdpte_index = 0; */
-/*     uint16 pde_index = 0;  */
-/*     uint16 pte_index = 0; */
-/*     page_t *pml4_addr; */
-/*     page_t *pdpte_addr; */
-/*     page_t *pde_addr; */
-/*     page_t *pte_addr; */
-/*     page_t page; */
-/*     struct physical_memory_block free_memory_block; */
-/*     page_t *current; */
-
-/*     ASSERT(physical_memory_size > UP_TO_DIRECT_MAPPED_PAGE); */
-
-/* 	current = (page_t *)INIT_FREE_PHY_MEM_END + 1; */
-        
-/*     pml4_addr = get_pml4(); */
-/*     while (current < (page_t *)physical_memory_size) { */
-/*         pml4_index = get_pml4_index(current); */
-/*         pdpte_index = get_pdpte_index(current); */
-/*         pde_index = get_pde_index(current); */
-/*         pte_index = get_pte_index(current); */
-
-/*         /\* check existing pml4 entry *\/ */
-/*         page = *(pml4_addr + pml4_index); */
-/*         /\* make new entry if not exist *\/ */
-/*         if ((page & PAGE_P_BIT) == 0) { */
-/*             if (get_free_physical_memory_block(&free_memory_block) == FALSE) */
-/*                 abort(); */
-/*             *(pml4_addr + pml4_index) =  */
-/*                 (page_t)free_memory_block.addr | PAGE_P_BIT | */
-/*                 PAGE_RW_BIT | PAGE_US_BIT; */
-/*             page = (page_t)free_memory_block.addr; */
-/*             memset((void *)page, 0, PAGESIZE); */
-/*         } */
-
-/*         pdpte_addr = (page_t *)(page & ~(PAGESIZE - 1)); */
-/*         page = *(pdpte_addr + pdpte_index); */
-/*         /\* make new entry if not exist *\/ */
-/*         if ((page & PAGE_P_BIT) == 0) { */
-/*             if (get_free_physical_memory_block(&free_memory_block) == FALSE) */
-/*                 abort(); */
-/*             *(pdpte_addr + pdpte_index) = */
-/*                 (page_t)free_memory_block.addr | PAGE_P_BIT | */
-/*                 PAGE_RW_BIT | PAGE_US_BIT; */
-/*             page = (page_t)free_memory_block.addr; */
-/*             memset((void *)page, 0, PAGESIZE); */
-/*         } */
-
-/*         pde_addr = (page_t *)(page & ~(PAGESIZE - 1)); */
-/*         page = *(pde_addr + pde_index); */
-/*         /\* make new entry if not exist *\/ */
-/*         if ((page & PAGE_P_BIT) == 0) { */
-/*             if (get_free_physical_memory_block(&free_memory_block) == FALSE) */
-/*                 abort(); */
-/*             *(pde_addr + pde_index) = */
-/*                 (page_t)free_memory_block.addr | PAGE_P_BIT | */
-/*                 PAGE_RW_BIT | PAGE_US_BIT; */
-/*             page = (page_t)free_memory_block.addr; */
-/*             memset((void *)page, 0, PAGESIZE); */
-/*         } */
-
-/*         pte_addr = (page_t *)(page & ~(PAGESIZE - 1)); */
-/*         *(pte_addr + pte_index) =  */
-/*             (page_t)current | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT; */
-
-/*         /\* add new free memory block *\/ */
-/*         /\* if (current > INIT_FREE_PHY_MEM_END) { *\/ */
-/*         /\*     ((struct physical_memory_block *)current)->addr = current; *\/ */
-/*         /\*     add_free_physical_memory_block((struct physical_memory_block *)current); *\/ */
-/*         /\* } *\/ */
-        
-/*         current = ((uint8 *)current) + PAGESIZE; */
-/*     } */
-/* } */
 
 boolean init_heap(__IN struct buddy_block_root *buddy_block_root,
                   __IN void *heap_addr)
@@ -672,9 +586,10 @@ boolean fill_physical_page_in_logical_addr(void *logical_addr, uint64 size)
     page_t *pde_addr;
     page_t *pte_addr;
     page_t page;
-    struct physical_memory_block free_memory_block;
+    void *new_physical_addr;
     void *physical_addr;
     void *physical_logical;
+    void *target_addr = logical_addr + size;
 
     /* ASSERT(physical_memory_size > UP_TO_DIRECT_MAPPED_PAGE); */
 
@@ -682,10 +597,9 @@ boolean fill_physical_page_in_logical_addr(void *logical_addr, uint64 size)
         return FALSE;
 
     pml4_addr = get_pml4();
-    while (logical_addr < logical_addr + size) {
+    while (logical_addr < target_addr) {
         /* it will be success */
-        get_free_physical_memory_block(&free_memory_block);
-        physical_addr = free_memory_block.addr;
+        get_free_physical_memory_block(&new_physical_addr);
 
         pml4_index = get_pml4_index(logical_addr);
         pdpte_index = get_pdpte_index(logical_addr);
@@ -696,12 +610,12 @@ boolean fill_physical_page_in_logical_addr(void *logical_addr, uint64 size)
         page = *(pml4_addr + pml4_index);
         /* make new entry if not exist */
         if ((page & PAGE_P_BIT) == 0) {
-            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+            if (get_free_physical_memory_block(&physical_addr) == FALSE)
                 abort();
             *(pml4_addr + pml4_index) = 
-                (page_t)free_memory_block.addr | PAGE_P_BIT |
+                (page_t)physical_addr | PAGE_P_BIT |
                 PAGE_RW_BIT | PAGE_US_BIT;
-            page = (page_t)free_memory_block.addr;
+            page = (page_t)physical_addr;
             memset((void *)page, 0, PAGESIZE);
         }
 
@@ -709,12 +623,12 @@ boolean fill_physical_page_in_logical_addr(void *logical_addr, uint64 size)
         page = *(pdpte_addr + pdpte_index);
         /* make new entry if not exist */
         if ((page & PAGE_P_BIT) == 0) {
-            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+            if (get_free_physical_memory_block(&physical_addr) == FALSE)
                 abort();
             *(pdpte_addr + pdpte_index) =
-                (page_t)free_memory_block.addr | PAGE_P_BIT |
+                (page_t)physical_addr | PAGE_P_BIT |
                 PAGE_RW_BIT | PAGE_US_BIT;
-            page = (page_t)free_memory_block.addr;
+            page = (page_t)physical_addr;
             memset((void *)page, 0, PAGESIZE);
         }
 
@@ -722,18 +636,18 @@ boolean fill_physical_page_in_logical_addr(void *logical_addr, uint64 size)
         page = *(pde_addr + pde_index);
         /* make new entry if not exist */
         if ((page & PAGE_P_BIT) == 0) {
-            if (get_free_physical_memory_block(&free_memory_block) == FALSE)
+            if (get_free_physical_memory_block(&physical_addr) == FALSE)
                 abort();
             *(pde_addr + pde_index) =
-                (page_t)free_memory_block.addr | PAGE_P_BIT |
+                (page_t)physical_addr | PAGE_P_BIT |
                 PAGE_RW_BIT | PAGE_US_BIT;
-            page = (page_t)free_memory_block.addr;
+            page = (page_t)physical_addr;
             memset((void *)page, 0, PAGESIZE);
         }
 
         pte_addr = (page_t *)(page & ~(PAGESIZE - 1));
         *(pte_addr + pte_index) = 
-            (page_t)physical_addr | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT;
+            (page_t)new_physical_addr | PAGE_P_BIT | PAGE_RW_BIT | PAGE_US_BIT;
 
         logical_addr = ((uint8 *)logical_addr) + PAGESIZE;
     }
@@ -756,6 +670,11 @@ boolean add_new_buddy_block_root(void)
     
 	if (init_heap(buddy_block_next_available, logical_addr) == FALSE)
 		return FALSE;
+
+    if (prepair_out_of_memory_for_request_logical_addr == NULL)
+        prepair_out_of_memory_for_request_logical_addr =
+            (struct used_logical_addr *)alloc_heap(
+                sizeof (struct used_logical_addr));
 }
 
 void *alloc_heap(uint32 size)
@@ -863,9 +782,8 @@ void init_mm(void)
 
     init_global_vars();
 	phys_mem_size = get_physical_mem_size();
-    init_used_logical_addr_list();
+    init_used_logical_addr_list(phys_mem_size);
 	init_alloc();
-	init_first_free_physical_memory_block();
     prealloced_for_out_of_memory();
-	/* init_physical_memory_block(phys_mem_size); */
+	init_first_free_physical_memory_block(phys_mem_size);
 }

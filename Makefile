@@ -28,6 +28,9 @@ $(PROJECT)_kernel.bin: $(PROJECT)_kernel.elf
 $(PROJECT)_kernel.elf: $(KERNEL_OBJ)
 	$(LINKER) -o $@ -T ganaeos64.ld $(KERNEL_OBJ)
 
+
+# .o.c:
+# 	$(CC) -c $< -std=c99 -m64 -I./include -g
 main.o: kernel/main.c
 	gcc -c $< -std=c99 -m64 -I./include -g
 
@@ -48,7 +51,7 @@ libc.o: kernel/libc.c
 
 
 clean:
-	rm -rf *.bin *.elf *.o
+	rm -rf *.bin *.elf *.o core
 
 aligner: tool/aligner/aligner.c
 	$(CC) -o out/host/bin/aligner tool/aligner/aligner.c

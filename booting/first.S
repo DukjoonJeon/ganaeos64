@@ -3,6 +3,8 @@
 #define PDE_SEG    0x1200
 #define PTE_SEG    0x1300 /* 0 ~ 2mbyte */
 #define PTE_SEG2   0x1400 /* 2 ~ 4mbyte */
+#define PTE_SEG3   0x1500 /* 4 ~ 6mbyte */
+#define PTE_SEG4   0x1600 /* 6 ~ 8mbyte */
 /* #define KERNEL_SEG 0xE00 */
 	
 	.code16
@@ -29,7 +31,7 @@ init_bootloader:
 	
 	/* read floppy's sectors into mem */
 	movb $0x2, %ah
-	movb $20, %al /* num of sectors */
+	movb $30, %al /* num of sectors */
 	movb $0, %ch /* cylinder & 0xff */
 	movb $2, %cl /* sector number 1 to 63 */
 	movb $0, %dh /* head */
@@ -69,11 +71,21 @@ init_bootloader:
 	addl $7, %ebx
 	addw $8, %si
 	movl %ebx, %es:(%si)
+	/* set PDE3 */
+	movl $PTE_SEG3 << 4, %ebx
+	addl $7, %ebx
+	addw $8, %si
+	movl %ebx, %es:(%si)
+	/* set PDE4 */
+	movl $PTE_SEG4 << 4, %ebx
+	addl $7, %ebx
+	addw $8, %si
+	movl %ebx, %es:(%si)
 	/* set PTE */
 	movw $PTE_SEG, %ax
 	movw %ax, %es
 	movl $7, %eax /* P, R/W, U/S */
-	movw $1024, %cx
+	movw $2048, %cx
 	movw $0, %si
 set_pte:	
 	movl %eax, %es:(%si)
@@ -138,6 +150,28 @@ halt_the_machine:
 	.ascii "Halt the machine\n\r"
 	.byte 0
 
+	.section ".bl.magic", "a"
+stack_top_position:		
+magic_number: .word 0xAA55
+
+	.code64
+	.section ".bl.text64", "ax"
+	.global main_64bit
+main_64bit:
+	movw $0xf, %ax
+	movw %ax, %ds
+	movw %ax, %es
+	movw %ax, %fs
+	movw %ax, %gs
+	
+	movq $stack_top_position + 0x7c00, %rsp
+
+	jmp start_kernel_addr
+	
+none2:			
+	jmp none2
+		
+	.section ".bl.data64", "a"
 protect_64bit_gdtr:
 	.word 0x17
 	.long 0x7c00 + protect_64bit_gdt
@@ -163,25 +197,3 @@ protect_64bit_gdt:
 	.byte 0x00   
 	.byte 0x00   		
 	
-	.section ".bl.magic", "a"
-stack_top_position:		
-magic_number: .word 0xAA55
-
-	.code64
-	.section ".bl.text64", "ax"
-	.global main_64bit
-main_64bit:
-	movw $0xf, %ax
-	movw %ax, %ds
-	movw %ax, %es
-	movw %ax, %fs
-	movw %ax, %gs
-	
-	movq $stack_top_position + 0x7c00, %rsp
-
-	jmp start_kernel_addr
-	
-none2:			
-	jmp none2
-	.section ".bl.data64", "a"
-none3:
